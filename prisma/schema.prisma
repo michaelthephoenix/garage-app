@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  hashedPassword String?
+  role           UserRole  @default(STAFF)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workOrders     WorkOrder[] @relation("AssignedTechnician")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  TECHNICIAN
+  STAFF
+}
+
+model Customer {
+  id          String    @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String    @unique
+  phone       String
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  vehicles    Vehicle[]
+  workOrders  WorkOrder[]
+  appointments Appointment[]
+  invoices    Invoice[]
+}
+
+model Vehicle {
+  id             String    @id @default(cuid())
+  make           String
+  model          String
+  year           Int
+  vin            String    @unique
+  licensePlate   String?
+  color          String?
+  mileage        Int?
+  notes          String?
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  workOrders     WorkOrder[]
+  appointments   Appointment[]
+}
+
+model WorkOrder {
+  id             String    @id @default(cuid())
+  orderNumber    String    @unique
+  status         WorkOrderStatus @default(PENDING)
+  description    String
+  diagnosticNotes String?
+  startDate      DateTime
+  completionDate DateTime?
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  vehicleId      String
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id])
+  technicianId   String?
+  technician     User?     @relation("AssignedTechnician", fields: [technicianId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lineItems      WorkOrderLineItem[]
+  invoice        Invoice?
+}
+
+enum WorkOrderStatus {
+  PENDING
+  IN_PROGRESS
+  WAITING_FOR_PARTS
+  COMPLETED
+  INVOICED
+  PAID
+  CANCELED
+}
+
+model WorkOrderLineItem {
+  id             String    @id @default(cuid())
+  description    String
+  quantity       Int
+  unitPrice      Decimal   @db.Decimal(10, 2)
+  laborHours     Decimal?  @db.Decimal(5, 2)
+  laborRate      Decimal?  @db.Decimal(10, 2)
+  partId         String?
+  part           InventoryItem? @relation(fields: [partId], references: [id])
+  workOrderId    String
+  workOrder      WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workOrderId])
+}
+
+model InventoryItem {
+  id             String    @id @default(cuid())
+  partNumber     String    @unique
+  name           String
+  description    String?
+  category       String
+  manufacturer   String?
+  location       String?
+  quantity       Int       @default(0)
+  minQuantity    Int       @default(5)
+  costPrice      Decimal   @db.Decimal(10, 2)
+  sellingPrice   Decimal   @db.Decimal(10, 2)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lineItems      WorkOrderLineItem[]
+  transactions   InventoryTransaction[]
+}
+
+model InventoryTransaction {
+  id             String    @id @default(cuid())
+  type           TransactionType
+  quantity       Int
+  notes          String?
+  inventoryItemId String
+  inventoryItem  InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedBy      String?
+
+  @@index([inventoryItemId])
+}
+
+enum TransactionType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+model Appointment {
+  id             String    @id @default(cuid())
+  date           DateTime
+  startTime      DateTime
+  endTime        DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  notes          String?
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  vehicleId      String
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+model Invoice {
+  id             String    @id @default(cuid())
+  invoiceNumber  String    @unique
+  date           DateTime
+  dueDate        DateTime
+  status         InvoiceStatus @default(PENDING)
+  subtotal       Decimal   @db.Decimal(10, 2)
+  tax            Decimal   @db.Decimal(10, 2)
+  total          Decimal   @db.Decimal(10, 2)
+  notes          String?
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  workOrderId    String    @unique
+  workOrder      WorkOrder @relation(fields: [workOrderId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  payments       Payment[]
+}
+
+enum InvoiceStatus {
+  PENDING
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+}
+
+model Payment {
+  id             String    @id @default(cuid())
+  amount         Decimal   @db.Decimal(10, 2)
+  method         PaymentMethod
+  reference      String?
+  date           DateTime
+  notes          String?
+  invoiceId      String
+  invoice        Invoice   @relation(fields: [invoiceId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([invoiceId])
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  CHECK
+  BANK_TRANSFER
+  ONLINE_PAYMENT
+}
